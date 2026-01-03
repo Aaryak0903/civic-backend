@@ -44,9 +44,11 @@ app.use(
         next();
     })
 // Routes
+const sseRoutes = require('./routes/sseRoutes');
 app.use('/api/auth', authRoutes);
 app.use('/api/issues', issueRoutes);
-app.use('/api/upload', uploadRoutes);
+app.use('/api/upload', uploadRoutes); // Keeping this if you need it, though your current flow uses Issue create for images.
+app.use('/api/sse', sseRoutes.router);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

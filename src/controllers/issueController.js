@@ -1,4 +1,5 @@
 const Issue = require('../models/issueModel');
+const { sendUpdate } = require('../routes/sseRoutes');
 const supabase = require('../config/supabase');
 const path = require('path');
 
@@ -87,6 +88,9 @@ exports.createIssue = async (req, res) => {
 
         // Populate the reportedBy field to include user info in response
         await issue.populate('reportedBy', 'name email');
+
+        // Notify connected clients
+        sendUpdate({ type: 'ISSUE_CREATED', data: issue });
 
         res.status(201).json({
             success: true,
@@ -289,6 +293,9 @@ exports.updateIssueStatus = async (req, res) => {
             });
         }
 
+        // Notify connected clients
+        sendUpdate({ type: 'ISSUE_UPDATED', data: issue });
+
         res.status(200).json({
             success: true,
             message: 'Issue status updated successfully',
@@ -322,6 +329,9 @@ exports.upvoteIssue = async (req, res) => {
         }
 
         await issue.upvote();
+
+        // Notify connected clients
+        sendUpdate({ type: 'ISSUE_UPVOTED', data: { id: issue._id, upvotes: issue.upvotes } });
 
         res.status(200).json({
             success: true,
@@ -418,6 +428,7 @@ exports.getNearbyIssues = async (req, res) => {
         });
     }
 };
+
 /**
  * Get issues reported by the current user
  * GET /api/issues/my-issues
@@ -484,31 +495,31 @@ exports.getOfficerIssues = async (req, res) => {
         // For now, let's prioritize region match if available in user's location object
 
         if (user.location) {
-            if (typeof user.location === 'string') {
+            if (user.location.coordinates && Array.isArray(user.location.coordinates) && user.location.coordinates.length === 2 && user.location.coordinates[0] !== 0) {
+                // Proximity search using $geoWithin (allows sorting and counting)
+                const [lng, lat] = user.location.coordinates;
+                const radiusInKm = 10;
+                const radiusInRadians = radiusInKm / 6378.1;
+
+                filter.location = {
+                    $geoWithin: {
+                        $centerSphere: [[lng, lat], radiusInRadians]
+                    }
+                };
+            } else if (typeof user.location === 'string') {
                 filter.region = user.location;
             } else if (user.location.region) {
                 filter.region = user.location.region;
-            } else if (user.location.coordinates) {
-                // Proximity search if no region but coordinates exist
-                const [lng, lat] = user.location.coordinates;
-                // Add geo filter to the main filter object
-                filter.location = {
-                    $near: {
-                        $geometry: {
-                            type: 'Point',
-                            coordinates: [lng, lat]
-                        },
-                        $maxDistance: 10000 // 10km radius for officers by default
-                    }
-                };
             }
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const issues = await Issue.find(filter)
+        let query = Issue.find(filter)
             .populate('reportedBy', 'name email')
-            .sort({ createdAt: -1 })
+            .sort({ createdAt: -1 });
+
+        const issues = await query
             .limit(parseInt(limit))
             .skip(skip);
 
