@@ -26,6 +26,7 @@ app.use(
         const allowedOrigins = [
             'http://localhost:8000',
             'http://localhost:5173',
+            'https://civicsense-ui-34.vercel.app',
         ]
         if (allowedOrigins.includes(origin)) {
             res.header('Access-Control-Allow-Origin', origin);
